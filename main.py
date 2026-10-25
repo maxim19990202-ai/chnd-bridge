@@ -1,5 +1,7 @@
 import os
 import requests
+import asyncio
+import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -8,6 +10,26 @@ app = FastAPI()
 # Ваши ключи из проекта ESP32
 SINRIC_API_KEY = "e8657e8a-7345-4158-a933-9b9f07cacb1e"
 DEVICE_ID = "6addbd02814fdde8893b2883"
+
+# Получаем URL нашего сервиса на Render (Render автоматически передает переменные окружения, или можно указать жестко)
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://chnd-bridge.onrender.com")
+
+# Фоновая задача для предотвращения засыпания на бесплатном тарифе Render
+async def keep_alive():
+    await asyncio.sleep(10) # Даем приложению полностью стартовать
+    async with httpx.AsyncClient() as client:
+        while True:
+            try:
+                # Каждые 12 минут шлем запрос сами на себя
+                response = await client.get(RENDER_EXTERNAL_URL)
+                print(f"Keep-alive ping status: {response.status_code}")
+            except Exception as e:
+                print(f"Keep-alive ping error: {e}")
+            await asyncio.sleep(720) # 720 секунд = 12 минут
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(keep_alive())
 
 def send_sinric_action(action, value_dict):
     url = f"https://api.sinric.pro/api/v1/devices/{DEVICE_ID}/action"
